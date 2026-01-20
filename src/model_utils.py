@@ -104,6 +104,12 @@ If a question does not make any sense, or is not factually coherent, explain why
         user_chat_template = "<|user|>\n{instruction}<|end|>"
         response_key = "\n<|assistant|>\n"
         response_template = response_key + "{target}<|end|>\n"
+    elif "qwen" in model_name:  # 新增 Qwen 的模板配置
+        found += 1
+        first_user_msg = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{instruction}<|im_end|>\n"
+        user_chat_template = "<|im_start|>user\n{instruction}<|im_end|>\n"
+        response_key = "<|im_start|>assistant\n"
+        response_template = response_key + "{target}<|im_end|>\n"
 
     if found == 0:
         raise NotImplementedError(f"Model {model_name} not supported")
@@ -113,17 +119,40 @@ If a question does not make any sense, or is not factually coherent, explain why
     return first_user_msg, user_chat_template, response_template, response_key
 
 
+# def get_embed_weights(model):
+#     if type(model) == GemmaForCausalLM:
+#         return model.model.embed_tokens.weight
+#     elif type(model) == LlamaForCausalLM:
+#         return model.model.embed_tokens.weight
+#     elif type(model) == MistralForCausalLM:
+#         return model.model.embed_tokens.weight
+#     elif type(model) == Phi3ForCausalLM:
+#         return model.model.embed_tokens.weight
+#     else:
+#         return model.model.embed_tokens.weight
+
+
 def get_embed_weights(model):
-    if type(model) == GemmaForCausalLM:
-        return model.model.embed_tokens.weight
-    elif type(model) == LlamaForCausalLM:
-        return model.model.embed_tokens.weight
-    elif type(model) == MistralForCausalLM:
-        return model.model.embed_tokens.weight
-    elif type(model) == Phi3ForCausalLM:
-        return model.model.embed_tokens.weight
-    else:
-        return model.model.embed_tokens.weight
+    # 1. 优先使用标准接口 (Qwen3/LLaMA3 等新模型)
+    if hasattr(model, "get_input_embeddings"):
+        embed_layer = model.get_input_embeddings()
+        if hasattr(embed_layer, "weight"):
+            return embed_layer.weight
+    
+    # 2. 降级处理：通用属性路径 (兼容所有旧模型)
+    if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
+        embed_tokens = model.model.embed_tokens
+        if hasattr(embed_tokens, "weight"):
+            return embed_tokens.weight
+    
+    # 3. 最后尝试根级属性 (GPT-2 等特殊架构)
+    if hasattr(model, "embed_tokens") and hasattr(model.embed_tokens, "weight"):
+        return model.embed_tokens.weight
+    if hasattr(model, "transformer") and hasattr(model.transformer, "wte"):
+        return model.transformer.wte.weight  # GPT-2 风格
+    
+    # 明确的错误提示
+    raise RuntimeError(f"Unsupported model architecture: {type(model).__name__}")
 
 
 def get_model_name(model_path):
@@ -146,6 +175,8 @@ def get_model_name(model_path):
         return "mistral"
     elif "r2d2" in model_name:
         return "mistral"
+    elif "qwen" in model_name:  # 新增
+        return "qwen"
     else:
         raise ValueError(f"Model {model_path} not supported")
 
